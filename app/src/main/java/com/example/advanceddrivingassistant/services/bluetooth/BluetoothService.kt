@@ -2,6 +2,7 @@ package com.example.advanceddrivingassistant.services.bluetooth
 
 import android.app.Service
 import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothSocket
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.IBinder
@@ -9,6 +10,8 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import com.example.advanceddrivingassistant.R
+import com.example.advanceddrivingassistant.obd.ObdCommandManager
+import com.example.advanceddrivingassistant.obd.ObdCommandResult
 import com.example.advanceddrivingassistant.utils.BluetoothServiceActions
 import com.example.advanceddrivingassistant.utils.ConnectionStateServiceActions
 import com.example.advanceddrivingassistant.utils.Constants
@@ -18,6 +21,8 @@ import com.example.advanceddrivingassistant.utils.logToFile
 class BluetoothService : Service() {
 
     private val loggingContext = "BluetoothServiceTag"
+
+    private lateinit var obdCommandManager: ObdCommandManager
 
     private val bluetoothConnectionManager: BluetoothConnectionManager = BluetoothConnectionManager(
         this
@@ -77,10 +82,6 @@ class BluetoothService : Service() {
         bluetoothConnectionManager.startDiscovery()
     }
 
-    private fun stopDiscovery() {
-        bluetoothConnectionManager.stopDiscovery()
-    }
-
     private fun connect(device: BluetoothDevice?) {
         if (device == null) {
             logToFile(this, loggingContext, "[connect] Device null")
@@ -96,15 +97,19 @@ class BluetoothService : Service() {
     private fun onDeviceStateChange(connectionState: DeviceConnectionState) {
         Log.d(loggingContext, "onDeviceStateChange")
         val intent = Intent()
-        intent.action = connectionState.toString()
 
         when (connectionState) {
             is DeviceConnectionState.Connected -> {
                 intent.action = ConnectionStateServiceActions.ACTION_DEVICE_CONNECTED.toString()
                 intent.putExtra("EXTRA_DEVICE_ADDRESS", connectionState.socket.remoteDevice.address)
+
+                obdCommandManager = ObdCommandManager(this, connectionState.socket, ::onObdResultReceived)
+                obdCommandManager.startCollectingData()
             }
             is DeviceConnectionState.Disconnected -> {
                 intent.action = ConnectionStateServiceActions.ACTION_DEVICE_DISCONNECTED.toString()
+
+                obdCommandManager.stopCollectingData()
             }
             is DeviceConnectionState.Connecting -> {
                 intent.action = ConnectionStateServiceActions.ACTION_DEVICE_CONNECTING.toString()
@@ -115,6 +120,19 @@ class BluetoothService : Service() {
                 intent.putExtra("EXTRA_FAILURE_REASON", connectionState.failureReason)
             }
         }
+
+        this@BluetoothService.sendBroadcast(intent)
+    }
+
+    private fun onObdResultReceived(result: ObdCommandResult) {
+        Log.d(loggingContext, "[onObdResultReceived] result: ${result.name} - ${result.value}")
+
+        val intent = Intent()
+        intent.action = result.name
+
+        intent.putExtra("EXTRA_COMMAND_NAME", result.name)
+        intent.putExtra("EXTRA_COMMAND_VALUE", result.value)
+        intent.putExtra("EXTRA_COMMAND_UNIT", result.unit)
 
         this@BluetoothService.sendBroadcast(intent)
     }

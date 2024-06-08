@@ -47,25 +47,19 @@
 
         <activity
             android:name=".DashboardActivity"
-            android:exported="true"
+            android:exported="false"
             android:label="@string/title_activity_dashboard"
+            android:theme="@style/Theme.AdvancedDrivingAssistant" />
+        <activity
+            android:name=".SelectDeviceActivity"
+            android:exported="true"
+            android:label="@string/title_activity_select_device"
             android:theme="@style/Theme.AdvancedDrivingAssistant">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
-        <activity
-            android:name=".SelectDeviceActivity"
-            android:exported="false"
-            android:label="@string/title_activity_select_device"
-            android:theme="@style/Theme.AdvancedDrivingAssistant">
-<!--            <intent-filter>-->
-<!--                <action android:name="android.intent.action.MAIN" />-->
-
-<!--                <category android:name="android.intent.category.LAUNCHER" />-->
-<!--            </intent-filter>-->
         </activity>
 
         <service

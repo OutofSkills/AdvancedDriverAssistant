@@ -1,5 +1,11 @@
 package com.example.advanceddrivingassistant
 
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -47,6 +53,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -56,11 +63,45 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.core.content.ContextCompat
+import com.github.pires.obd.enums.AvailableCommandNames
 import kotlin.math.roundToInt
 
 class DashboardActivity : ComponentActivity() {
 
     private val loggingContext = "DashboardActivityTag"
+
+    private val speedState = mutableStateOf("")
+    private val rpmState = mutableStateOf("")
+    private val fuelLevelState = mutableStateOf("")
+
+    private val obdCommandIntentFilter = IntentFilter().apply {
+        addAction(AvailableCommandNames.ENGINE_RPM.value)
+        addAction(AvailableCommandNames.SPEED.value)
+        addAction(AvailableCommandNames.FUEL_LEVEL.value)
+    }
+
+    private val obdDataReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            intent?.let {
+                Log.d(loggingContext, "val: ${it.getStringExtra("EXTRA_COMMAND_VALUE")} ${it.action === AvailableCommandNames.ENGINE_RPM.value}")
+                when (val action = it.action) {
+                    AvailableCommandNames.ENGINE_RPM.value -> {
+                       rpmState.value = it.getStringExtra("EXTRA_COMMAND_VALUE") ?: ""
+                    }
+                    AvailableCommandNames.SPEED.value -> {
+                        speedState.value = it.getStringExtra("EXTRA_COMMAND_VALUE") ?: ""
+                    }
+                    AvailableCommandNames.FUEL_LEVEL.value -> {
+                        fuelLevelState.value = it.getStringExtra("EXTRA_COMMAND_VALUE") ?: ""
+                    }
+                    else -> {
+                        Log.d(loggingContext, "Unknown action: $action")
+                    }
+                }
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -68,20 +109,36 @@ class DashboardActivity : ComponentActivity() {
         setContent {
             AdvancedDrivingAssistantTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+                    val speed by remember { speedState }
+                    val rpm by remember { rpmState }
+                    val fuelLevel by remember { fuelLevelState }
+
                     DashboardLayout(
-                        modifier = Modifier.padding(innerPadding)
+                        modifier = Modifier.padding(innerPadding),
+                        speed = speed,
+                        rpm = rpm,
+                        fuelLevel = fuelLevel
                     )
                 }
             }
         }
 
-        val deviceAddress = intent.extras?.getString("device_address_key")
-        Log.d(loggingContext, "Device Address: $deviceAddress")
+        ContextCompat.registerReceiver(
+            this,
+            obdDataReceiver,
+            obdCommandIntentFilter,
+            ContextCompat.RECEIVER_EXPORTED
+        )
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        unregisterReceiver(obdDataReceiver)
     }
 }
 
 @Composable
-fun DashboardLayout(modifier: Modifier) {
+fun DashboardLayout(modifier: Modifier, speed: String = "-", rpm: String = "-", fuelLevel: String = "-") {
     Column(modifier = modifier.fillMaxSize()) {
         Row(
             modifier = Modifier
@@ -181,7 +238,7 @@ fun DashboardLayout(modifier: Modifier) {
                 LabeledValueRow(
                     label = "Eco Score",
                     value = "721pts",
-                    icon = Icons.Filled.Info
+                    icon = ImageVector.vectorResource(R.drawable.eco_friendly)
                 )
 
                 HorizontalDivider(
@@ -191,8 +248,8 @@ fun DashboardLayout(modifier: Modifier) {
 
                 LabeledValueRow(
                     label = "Speed",
-                    value = "64km/h",
-                    icon = Icons.Filled.Info
+                    value = speed,
+                    icon = ImageVector.vectorResource(R.drawable.deadline)
                 )
 
                 HorizontalDivider(
@@ -202,8 +259,8 @@ fun DashboardLayout(modifier: Modifier) {
 
                 LabeledValueRow(
                     label = "RPM",
-                    value = "64RPM",
-                    icon = Icons.Filled.Info,
+                    value = rpm,
+                    icon = ImageVector.vectorResource(R.drawable.dynamo),
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
             }
@@ -370,7 +427,7 @@ private fun getValuePercentageForRange(value: Float, max: Float, min: Float) =
 fun PerformanceChart(modifier: Modifier = Modifier, list: List<Float> = listOf(10f, 20f, 3f, 1f)) {
     val zipList: List<Pair<Float, Float>> = list.zipWithNext()
 
-    var dragX by remember { mutableStateOf(-1f) }
+    var dragX by remember { mutableFloatStateOf(-1f) }
     var interpolatedValue by remember { mutableStateOf<Float?>(null) }
 
     Box(
@@ -455,7 +512,6 @@ fun PerformanceChart(modifier: Modifier = Modifier, list: List<Float> = listOf(1
                         center = Offset(dragX, intersectY)
                     )
 
-                    // Draw the value at the intersection point
                     drawContext.canvas.nativeCanvas.apply {
                         drawText(
                             "%.2f".format(interpolatedValue),

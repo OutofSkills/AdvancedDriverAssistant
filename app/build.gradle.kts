@@ -69,4 +69,7 @@ dependencies {
 
     // Maps
     implementation(libs.maps.compose)
+
+    // Obd-II
+    implementation("com.github.pires:obd-java-api:1.0")
 }
