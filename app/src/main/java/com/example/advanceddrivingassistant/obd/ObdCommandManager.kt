@@ -149,7 +149,7 @@ class ObdCommandManager(
                 }
 
                 startObdCommandFlow().collect {
-                    val result = ObdCommandResult(it.name, it.formattedResult, it.resultUnit)
+                    val result = ObdCommandResult(it.name, it.calculatedResult, it.resultUnit)
                     Log.d(loggingTag, "${result.name}: ${result.value} ${result.unit}")
 
                     onDataReceived(result)

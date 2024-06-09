@@ -1,7 +1,5 @@
 package com.example.advanceddrivingassistant
 
-import android.bluetooth.BluetoothAdapter
-import android.bluetooth.BluetoothDevice
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -49,9 +47,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -64,37 +64,53 @@ import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.core.content.ContextCompat
+import com.example.advanceddrivingassistant.components.PerformanceChart
+import com.example.advanceddrivingassistant.db.DrivingData
+import com.example.advanceddrivingassistant.db.LocalDbManager
+import com.example.advanceddrivingassistant.utils.calculateConsumptionPer100km
 import com.github.pires.obd.enums.AvailableCommandNames
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 class DashboardActivity : ComponentActivity() {
 
     private val loggingContext = "DashboardActivityTag"
 
-    private val speedState = mutableStateOf("")
-    private val rpmState = mutableStateOf("")
-    private val fuelLevelState = mutableStateOf("")
+    private val averageCarModelFuelConsumptions = 6.2 // l / 100Km
+
+    private val speedState = mutableStateOf("0")
+    private val rpmState = mutableStateOf("0")
+    private val fuelLevelState = mutableStateOf("0")
+
+    private var fuelConsumptionsRates = mutableStateOf(emptyList<Double>())
+
+    private var selectedCarDataRangeFilter = 0 // live
+    private var selectedFuelDataRangeFilter = 0 // live
+
+    private var coroutineDbJob: Job? = null
+    private val coroutineDbScope = CoroutineScope(Dispatchers.IO)
+    private val localDbManager: LocalDbManager = LocalDbManager(this)
 
     private val obdCommandIntentFilter = IntentFilter().apply {
-        addAction(AvailableCommandNames.ENGINE_RPM.value)
-        addAction(AvailableCommandNames.SPEED.value)
         addAction(AvailableCommandNames.FUEL_LEVEL.value)
     }
 
     private val obdDataReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             intent?.let {
-                Log.d(loggingContext, "val: ${it.getStringExtra("EXTRA_COMMAND_VALUE")} ${it.action === AvailableCommandNames.ENGINE_RPM.value}")
+                Log.d(
+                    loggingContext,
+                    "val: ${it.getStringExtra("EXTRA_COMMAND_VALUE")} ${it.action === AvailableCommandNames.ENGINE_RPM.value}"
+                )
                 when (val action = it.action) {
-                    AvailableCommandNames.ENGINE_RPM.value -> {
-                       rpmState.value = it.getStringExtra("EXTRA_COMMAND_VALUE") ?: ""
-                    }
-                    AvailableCommandNames.SPEED.value -> {
-                        speedState.value = it.getStringExtra("EXTRA_COMMAND_VALUE") ?: ""
-                    }
                     AvailableCommandNames.FUEL_LEVEL.value -> {
                         fuelLevelState.value = it.getStringExtra("EXTRA_COMMAND_VALUE") ?: ""
                     }
+
                     else -> {
                         Log.d(loggingContext, "Unknown action: $action")
                     }
@@ -112,33 +128,87 @@ class DashboardActivity : ComponentActivity() {
                     val speed by remember { speedState }
                     val rpm by remember { rpmState }
                     val fuelLevel by remember { fuelLevelState }
+                    val fuelConsumptionsRates by remember { fuelConsumptionsRates }
 
                     DashboardLayout(
                         modifier = Modifier.padding(innerPadding),
                         speed = speed,
                         rpm = rpm,
-                        fuelLevel = fuelLevel
+                        fuelLevel = fuelLevel,
+                        onCarDataFilterClick = {
+                            selectedCarDataRangeFilter = it
+                        },
+                        onFuelDataFilterClick = {
+                            selectedFuelDataRangeFilter = it
+                        },
+                        fuelConsumptionsRates = fuelConsumptionsRates,
+                        averageCarModelFuelConsumptions = averageCarModelFuelConsumptions
                     )
                 }
             }
         }
 
         ContextCompat.registerReceiver(
-            this,
-            obdDataReceiver,
-            obdCommandIntentFilter,
-            ContextCompat.RECEIVER_EXPORTED
+            this, obdDataReceiver, obdCommandIntentFilter, ContextCompat.RECEIVER_EXPORTED
         )
+
+        refreshAverageDrivingData()
     }
 
     override fun onDestroy() {
         super.onDestroy()
         unregisterReceiver(obdDataReceiver)
+        coroutineDbJob?.cancel()
+    }
+
+    private fun refreshAverageDrivingData() {
+        coroutineDbJob = coroutineDbScope.launch {
+            while (true) {
+                var avgDrivingData: DrivingData
+
+                if (selectedFuelDataRangeFilter == 0) {
+                    fuelConsumptionsRates.value =
+                        localDbManager.getFuelLastConsumptionRatesRecords(20)
+                } else {
+                    fuelConsumptionsRates.value =
+                        localDbManager.getFuelConsumptionRates(selectedFuelDataRangeFilter)
+                }
+
+                if (selectedCarDataRangeFilter == 0) {
+                    val lastRecordedData = localDbManager.getLastRecordedData(1)
+                    avgDrivingData = lastRecordedData.last()
+                } else {
+                    avgDrivingData = localDbManager.getAverageData(selectedCarDataRangeFilter)
+                }
+
+                speedState.value = avgDrivingData.speed.toString()
+                rpmState.value = avgDrivingData.rpm.toString()
+
+                delay(1000)
+            }
+        }
     }
 }
 
 @Composable
-fun DashboardLayout(modifier: Modifier, speed: String = "-", rpm: String = "-", fuelLevel: String = "-") {
+fun DashboardLayout(
+    modifier: Modifier,
+    speed: String = "-",
+    rpm: String = "-",
+    fuelLevel: String = "-",
+    onCarDataFilterClick: (Int) -> Unit = {},
+    onFuelDataFilterClick: (Int) -> Unit = {},
+    fuelConsumptionsRates: List<Double>,
+    averageCarModelFuelConsumptions: Double = 0.0,
+) {
+    val fuelConsumptionPer100km =
+        calculateConsumptionPer100km(speed.toDoubleOrNull() ?: 0.0, fuelConsumptionsRates.average())
+    Log.d("DashboardLayout", "fuelConsumptionPer100km: $fuelConsumptionPer100km")
+    val chartLineColor = if (fuelConsumptionPer100km <= averageCarModelFuelConsumptions) Color(
+        0xFF8FBC8F
+    ) else Color(0xFFB22222)
+
+
     Column(modifier = modifier.fillMaxSize()) {
         Row(
             modifier = Modifier
@@ -169,28 +239,13 @@ fun DashboardLayout(modifier: Modifier, speed: String = "-", rpm: String = "-", 
                 shape = RoundedCornerShape(10)
             ) {
                 Column {
-                    TimeDataFilterHeader()
+                    TimeDataFilterHeader(onFilterClick = onFuelDataFilterClick)
                     PerformanceChart(
                         Modifier
                             .height(80.dp)
                             .padding(16.dp),
-                        listOf(
-                            113.518f,
-                            113.799f,
-                            113.333f,
-                            113.235f,
-                            114.099f,
-                            113.506f,
-                            113.985f,
-                            114.212f,
-                            114.125f,
-                            113.531f,
-                            114.228f,
-                            113.284f,
-                            114.031f,
-                            113.493f,
-                            113.112f
-                        ),
+                        list = fuelConsumptionsRates,
+                        lineColor = chartLineColor,
                     )
 
                     Row(
@@ -200,7 +255,9 @@ fun DashboardLayout(modifier: Modifier, speed: String = "-", rpm: String = "-", 
                             .align(Alignment.CenterHorizontally),
                         horizontalArrangement = Arrangement.Center
                     ) {
-                        Text(text = "0.9", fontSize = 24.sp)
+                        Text(
+                            text = "%.1f".format(fuelConsumptionsRates.average()), fontSize = 24.sp
+                        )
                         Text(
                             text = "l/h",
                             color = Color.Gray,
@@ -224,10 +281,9 @@ fun DashboardLayout(modifier: Modifier, speed: String = "-", rpm: String = "-", 
                 .padding(16.dp), shape = RoundedCornerShape(10)
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                TimeDataFilterHeader()
+                TimeDataFilterHeader(onFilterClick = onCarDataFilterClick)
 
                 TextButton(onClick = { }) {
                     Text(text = "More", fontSize = 12.sp)
@@ -248,7 +304,7 @@ fun DashboardLayout(modifier: Modifier, speed: String = "-", rpm: String = "-", 
 
                 LabeledValueRow(
                     label = "Speed",
-                    value = speed,
+                    value = "${speed}Km/h",
                     icon = ImageVector.vectorResource(R.drawable.deadline)
                 )
 
@@ -259,7 +315,7 @@ fun DashboardLayout(modifier: Modifier, speed: String = "-", rpm: String = "-", 
 
                 LabeledValueRow(
                     label = "RPM",
-                    value = rpm,
+                    value = "${rpm}r/m",
                     icon = ImageVector.vectorResource(R.drawable.dynamo),
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
@@ -271,14 +327,10 @@ fun DashboardLayout(modifier: Modifier, speed: String = "-", rpm: String = "-", 
 
 @Composable
 fun LabeledValueRow(
-    label: String,
-    value: String,
-    icon: ImageVector,
-    modifier: Modifier = Modifier
+    label: String, value: String, icon: ImageVector, modifier: Modifier = Modifier
 ) {
     Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween
+        modifier = modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Row {
             Icon(
@@ -296,16 +348,23 @@ fun LabeledValueRow(
 }
 
 @Composable
-private fun TimeDataFilterHeader() {
+private fun TimeDataFilterHeader(onFilterClick: (Int) -> Unit) {
+    var selectedFilter by remember { mutableStateOf<Int?>(null) }
+
     Row {
-        TextButton(onClick = { }) {
-            Text(text = "Day", fontSize = 10.sp)
-        }
-        TextButton(onClick = { }) {
-            Text(text = "Week", fontSize = 10.sp)
-        }
-        TextButton(onClick = { }) {
-            Text(text = "Month", fontSize = 10.sp)
+        val filters = listOf(1 to "Day", 7 to "Week", 30 to "Month")
+
+        filters.forEach { (days, label) ->
+            val isSelected = selectedFilter == days
+            TextButton(
+                onClick = {
+                    selectedFilter = if (isSelected) null else days
+                    onFilterClick(selectedFilter ?: 0)
+                },
+                colors = if (isSelected) ButtonDefaults.buttonColors(containerColor = Color.Gray) else ButtonDefaults.textButtonColors()
+            ) {
+                Text(text = label, fontSize = 10.sp)
+            }
         }
     }
 }
@@ -314,8 +373,7 @@ private fun TimeDataFilterHeader() {
 private fun NotificationsButton(onClick: () -> Unit = {}) {
     TextButton(onClick = onClick) {
         Icon(
-            imageVector = Icons.Filled.Notifications,
-            contentDescription = "Notifications"
+            imageVector = Icons.Filled.Notifications, contentDescription = "Notifications"
         )
         Text(text = "Notifications")
     }
@@ -325,8 +383,7 @@ private fun NotificationsButton(onClick: () -> Unit = {}) {
 private fun InfoButton(onClick: () -> Unit = {}) {
     TextButton(onClick = onClick) {
         Icon(
-            imageVector = Icons.Filled.Info,
-            contentDescription = "Information"
+            imageVector = Icons.Filled.Info, contentDescription = "Information"
         )
         Text(text = "Information")
     }
@@ -340,9 +397,7 @@ fun MapLocationInfoCard(modifier: Modifier) {
     }
 
     Card(
-        modifier = modifier
-            .padding(start = 4.dp),
-        shape = RoundedCornerShape(10)
+        modifier = modifier.padding(start = 4.dp), shape = RoundedCornerShape(10)
     ) {
         GoogleMap(
             modifier = Modifier.fillMaxSize(),
@@ -374,8 +429,7 @@ fun CarInfoCard(modifier: Modifier) {
             }
 
             Image(
-                painter = image,
-                contentDescription = "My car"
+                painter = image, contentDescription = "My car"
             )
 
             Text(
@@ -416,116 +470,5 @@ fun CarInfoCard(modifier: Modifier) {
                 Text(text = "5.4 l/100km", fontSize = 12.sp)
             }
         }
-    }
-}
-
-private fun getValuePercentageForRange(value: Float, max: Float, min: Float) =
-    (value - min) / (max - min)
-
-@Composable
-@Preview(heightDp = 300, widthDp = 300, backgroundColor = 0xFFFFFFFF, showBackground = true)
-fun PerformanceChart(modifier: Modifier = Modifier, list: List<Float> = listOf(10f, 20f, 3f, 1f)) {
-    val zipList: List<Pair<Float, Float>> = list.zipWithNext()
-
-    var dragX by remember { mutableFloatStateOf(-1f) }
-    var interpolatedValue by remember { mutableStateOf<Float?>(null) }
-
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .pointerInput(Unit) {
-                detectDragGestures(
-                    onDragStart = { change ->
-                        dragX = change.x
-                    },
-                    onDragEnd = {
-                        dragX = -1f
-                        interpolatedValue = null
-                    },
-                    onDragCancel = {
-                        dragX = -1f
-                        interpolatedValue = null
-                    },
-                    onDrag = { change, _ ->
-                        dragX = change.position.x
-                    }
-                )
-            }
-    ) {
-        val max = list.maxOrNull() ?: 1f
-        val min = list.minOrNull() ?: 0f
-
-        val lineColor = if (list.last() < list.first()) Color(0xFF8FBC8F) else Color(0xFFB22222)
-
-        Canvas(
-            modifier = Modifier.fillMaxSize(),
-            onDraw = {
-                var startX = 0f
-                for (pair in zipList) {
-                    val fromValuePercentage = getValuePercentageForRange(pair.first, max, min)
-                    val toValuePercentage = getValuePercentageForRange(pair.second, max, min)
-
-                    val fromPoint = Offset(x = startX, y = size.height * (1 - fromValuePercentage))
-                    val toPoint = Offset(
-                        x = startX + size.width / zipList.size,
-                        y = size.height * (1 - toValuePercentage)
-                    )
-
-                    drawLine(
-                        color = lineColor,
-                        start = fromPoint,
-                        end = toPoint,
-                        strokeWidth = 3f
-                    )
-
-                    startX += size.width / zipList.size
-                }
-
-                if (dragX >= 0) {
-                    val chartWidth = size.width
-                    val segmentWidth = chartWidth / zipList.size
-
-                    val touchedIndex =
-                        (dragX / segmentWidth).roundToInt().coerceIn(0, zipList.size - 1)
-                    val segmentStartX = touchedIndex * segmentWidth
-                    val from = zipList[touchedIndex].first
-                    val to = zipList[touchedIndex].second
-                    val proportion = ((dragX - segmentStartX) / segmentWidth).coerceIn(0f, 1f)
-                    interpolatedValue = from + proportion * (to - from)
-
-                    val intersectY = size.height * (1 - getValuePercentageForRange(
-                        interpolatedValue!!,
-                        max,
-                        min
-                    ))
-
-                    drawLine(
-                        color = Color.Gray,
-                        start = Offset(dragX, 0f),
-                        end = Offset(dragX, size.height),
-                        strokeWidth = 2f
-                    )
-
-                    drawCircle(
-                        color = Color.Blue,
-                        radius = 4f,
-                        center = Offset(dragX, intersectY)
-                    )
-
-                    drawContext.canvas.nativeCanvas.apply {
-                        drawText(
-                            "%.2f".format(interpolatedValue),
-                            dragX,
-                            intersectY - 10,
-                            Paint().asFrameworkPaint().apply {
-                                isAntiAlias = true
-                                textSize = 30f
-                                color = android.graphics.Color.BLACK
-                            }
-                        )
-                    }
-                }
-            }
-        )
     }
 }
