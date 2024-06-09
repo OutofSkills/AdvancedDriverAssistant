@@ -42,17 +42,20 @@ import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import com.example.advanceddrivingassistant.components.OverlaySpinner
-import com.example.advanceddrivingassistant.observers.BluetoothLifecycleObserver
 import com.example.advanceddrivingassistant.observers.NotificationLifecycleObserver
+import com.example.advanceddrivingassistant.observers.PermissionsLifecycleObserver
 import com.example.advanceddrivingassistant.services.bluetooth.BluetoothService
 import com.example.advanceddrivingassistant.ui.theme.AdvancedDrivingAssistantTheme
 import com.example.advanceddrivingassistant.utils.BluetoothServiceActions
 import com.example.advanceddrivingassistant.utils.ConnectionStateServiceActions
-import com.example.advanceddrivingassistant.utils.DeviceConnectionState
 import com.example.advanceddrivingassistant.utils.logToFile
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.launch
 
-class SelectDeviceActivity : ComponentActivity() {
+class SelectDeviceActivity : ComponentActivity(), PermissionsLifecycleObserver.PermissionsSetupCallback {
     private val loggingTag = "SelectDeviceActivityTag"
 
     private val bluetoothDevices = mutableStateOf<List<BluetoothDevice?>>(emptyList())
@@ -153,50 +156,7 @@ class SelectDeviceActivity : ComponentActivity() {
         }
     }
 
-    private val bluetoothSetupObserver = BluetoothLifecycleObserver(
-        this,
-        object : BluetoothLifecycleObserver.BluetoothSetupCallback {
-            override fun bluetoothTurnedOn() {
-                logToFile(this@SelectDeviceActivity, loggingTag, "Bluetooth is turned on")
-
-                startDiscovery()
-            }
-
-            override fun bluetoothRequestCancelled() {
-                logToFile(
-                    this@SelectDeviceActivity,
-                    loggingTag,
-                    "Bluetooth turn on request cancelled"
-                )
-                // TODO: Show a message in app and probably a button to retry
-            }
-
-            override fun bluetoothPermissionsGranted() {
-                logToFile(this@SelectDeviceActivity, loggingTag, "Bluetooth permissions granted")
-            }
-
-            override fun bluetoothPermissionsRefused() {
-                logToFile(this@SelectDeviceActivity, loggingTag, "Bluetooth permissions refused")
-            }
-        },
-    )
-
-    private val notificationsSetupObserver = NotificationLifecycleObserver(
-        this,
-        object : NotificationLifecycleObserver.NotificationSetupCallback {
-            override fun notificationsPermissionsGranted() {
-                Intent(applicationContext, BluetoothService::class.java).also {
-                    it.action = BluetoothServiceActions.START_SERVICE.toString()
-                    startForegroundService(it)
-                }
-            }
-
-            override fun notificationsPermissionsRefused() {
-                Toast.makeText(this@SelectDeviceActivity, "Notifications permissions are required", Toast.LENGTH_SHORT).show()
-            }
-
-        },
-    )
+    private lateinit var permissionsObserver: PermissionsLifecycleObserver
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -229,16 +189,15 @@ class SelectDeviceActivity : ComponentActivity() {
             ContextCompat.RECEIVER_EXPORTED
         )
 
-        lifecycle.addObserver(notificationsSetupObserver)
-        lifecycle.addObserver(bluetoothSetupObserver)
+        permissionsObserver = PermissionsLifecycleObserver(this, this)
+        lifecycle.addObserver(permissionsObserver)
     }
 
     override fun onDestroy() {
         super.onDestroy()
         unregisterReceiver(bluetoothStateReceiver)
         unregisterReceiver(deviceConnectionStateReceiver)
-        lifecycle.removeObserver(bluetoothSetupObserver)
-        lifecycle.removeObserver(notificationsSetupObserver)
+        lifecycle.removeObserver(permissionsObserver)
     }
 
     private fun startDiscovery() {
@@ -287,6 +246,38 @@ class SelectDeviceActivity : ComponentActivity() {
         isBluetoothConnecting.value = false
         connectionMessage.value = ""
         Toast.makeText(this, "Connection failed. Make sure you selected the correct device.", Toast.LENGTH_SHORT).show()
+    }
+
+    override fun notificationsPermissionsRefused() {
+        logToFile(this@SelectDeviceActivity, loggingTag, "Notifications permissions refused")
+    }
+
+    override fun bluetoothTurnedOn() {
+        logToFile(this@SelectDeviceActivity, loggingTag, "Bluetooth is turned on")
+
+        Intent(applicationContext, BluetoothService::class.java).also {
+            it.action = BluetoothServiceActions.START_SERVICE.toString()
+            startForegroundService(it)
+        }.also {
+            startDiscovery()
+        }
+    }
+
+    override fun bluetoothRequestCancelled() {
+        logToFile(
+            this@SelectDeviceActivity,
+            loggingTag,
+            "Bluetooth turn on request cancelled"
+        )
+        // TODO: Show a message in app and probably a button to retry
+    }
+
+    override fun bluetoothPermissionsGranted() {
+        logToFile(this@SelectDeviceActivity, loggingTag, "Bluetooth permissions granted")
+    }
+
+    override fun bluetoothPermissionsRefused() {
+        logToFile(this@SelectDeviceActivity, loggingTag, "Bluetooth permissions refused")
     }
 }
 

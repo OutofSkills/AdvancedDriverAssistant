@@ -11,25 +11,21 @@ import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.DefaultLifecycleObserver
-import androidx.lifecycle.LifecycleOwner
 
 class BluetoothLifecycleObserver(
     private val context: ComponentActivity,
     private val bluetoothSetupCallback: BluetoothSetupCallback,
-) : DefaultLifecycleObserver {
+) {
 
-    private val loggingTag = "BluetoothSetupObserver";
+    private val loggingTag = "BluetoothSetupObserver"
     private var bluetoothAdapter: BluetoothAdapter? = null
-    private lateinit var bluetoothEnableLauncher: ActivityResultLauncher<Intent>
-    private lateinit var bluetoothPermissionsLauncher: ActivityResultLauncher<Array<String>>
+    private var bluetoothEnableLauncher: ActivityResultLauncher<Intent>
+    private var bluetoothPermissionsLauncher: ActivityResultLauncher<Array<String>>
 
-    override fun onCreate(owner: LifecycleOwner) {
-        super.onCreate(owner)
-
+    init {
         val bluetoothManager =
-            context.getSystemService(Activity.BLUETOOTH_SERVICE) as BluetoothManager;
-        bluetoothAdapter = bluetoothManager.adapter;
+            context.getSystemService(Activity.BLUETOOTH_SERVICE) as BluetoothManager
+        bluetoothAdapter = bluetoothManager.adapter
 
         bluetoothEnableLauncher = context.registerForActivityResult(
             ActivityResultContracts.StartActivityForResult()
@@ -51,8 +47,6 @@ class BluetoothLifecycleObserver(
                 bluetoothSetupCallback.bluetoothPermissionsRefused()
             }
         }
-
-        requestBluetoothPermissions()
     }
 
     private fun enableBluetooth() {
@@ -66,7 +60,7 @@ class BluetoothLifecycleObserver(
         }
     }
 
-    private fun requestBluetoothPermissions() {
+    fun requestBluetoothPermissions() {
         if ((ContextCompat.checkSelfPermission(
                 context,
                 Manifest.permission.BLUETOOTH_SCAN
@@ -94,4 +88,3 @@ class BluetoothLifecycleObserver(
         fun bluetoothPermissionsRefused()
     }
 }
-
