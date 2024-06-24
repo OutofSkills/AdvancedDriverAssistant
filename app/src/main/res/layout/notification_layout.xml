@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="10dp">
+
+    <TextView
+        android:id="@+id/text_title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Monitoring driving events"
+        android:textStyle="bold"
+        android:textSize="16sp"/>
+
+    <TextView
+        android:id="@+id/text_instant_fuel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Instant fuel consumption: 3.38 l/100km"/>
+
+    <TextView
+        android:id="@+id/text_average_fuel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Average fuel consumption: 5.25 l/100km"/>
+
+    <TextView
+        android:id="@+id/text_driving_style"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Driving style: Eco"
+        android:textStyle="italic"/>
+</LinearLayout>

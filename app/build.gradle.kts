@@ -72,4 +72,7 @@ dependencies {
 
     // Obd-II
     implementation("com.github.pires:obd-java-api:1.0")
+
+    // Tensorflow
+    implementation("org.tensorflow:tensorflow-lite:2.5.0")
 }

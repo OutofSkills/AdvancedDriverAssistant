@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.IBinder
 import android.util.Log
+import android.widget.RemoteViews
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import com.example.advanceddrivingassistant.R
@@ -78,12 +79,19 @@ class BluetoothService : Service() {
 
     private fun startBluetoothForeground() {
         try {
+            val remoteViews = RemoteViews(packageName, R.layout.notification_layout)
+
+            remoteViews.setTextViewText(R.id.text_instant_fuel, "Instant fuel consumption: 6.85 l/100km")
+            remoteViews.setTextViewText(R.id.text_average_fuel, "Average fuel consumption: 5.28 l/100km")
+            remoteViews.setTextViewText(R.id.text_driving_style, "Driving style: Non-Eco")
+
             val notification = NotificationCompat.Builder(this, Constants.notificationChannelID)
                 .setSmallIcon(R.drawable.ic_launcher_foreground)
-                .setContentTitle("Monitoring driving events")
-                .setContentText("Average fuel consumption: 1.00 l/100km")
+                .setCustomContentView(remoteViews)
+                .setCustomBigContentView(remoteViews)
                 .setCategory(NotificationCompat.CATEGORY_SERVICE)
                 .build()
+
 
             ServiceCompat.startForeground(
                 this,

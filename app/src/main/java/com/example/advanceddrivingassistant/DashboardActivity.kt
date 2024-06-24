@@ -391,7 +391,7 @@ private fun InfoButton(onClick: () -> Unit = {}) {
 
 @Composable
 fun MapLocationInfoCard(modifier: Modifier) {
-    val singapore = LatLng(1.35, 103.87)
+    val singapore = LatLng(44.3302, 23.7949)
     val cameraPositionState = rememberCameraPositionState {
         position = CameraPosition.fromLatLngZoom(singapore, 10f)
     }
@@ -408,7 +408,7 @@ fun MapLocationInfoCard(modifier: Modifier) {
         ) {
             Marker(
                 state = MarkerState(position = singapore),
-                title = "Singapore",
+                title = "Craiova",
                 snippet = "Marker in Singapore"
             )
         }
@@ -433,7 +433,7 @@ fun CarInfoCard(modifier: Modifier) {
             )
 
             Text(
-                text = "Toyota Yaris",
+                text = "Skoda Superb",
                 modifier = Modifier.padding(bottom = 8.dp),
                 fontWeight = FontWeight.Bold
             )
@@ -453,7 +453,7 @@ fun CarInfoCard(modifier: Modifier) {
                             contentDescription = "Available range",
                             modifier = Modifier.size(18.dp)
                         )
-                        Text(text = "~200Km", fontSize = 12.sp)
+                        Text(text = "~520Km", fontSize = 12.sp)
                     }
                     Row(
                         modifier = Modifier.padding(start = 3.dp),
@@ -464,10 +464,10 @@ fun CarInfoCard(modifier: Modifier) {
                             contentDescription = "Fuel level",
                             modifier = Modifier.size(16.dp)
                         )
-                        Text(text = "10L", fontSize = 12.sp)
+                        Text(text = "66L", fontSize = 12.sp)
                     }
                 }
-                Text(text = "5.4 l/100km", fontSize = 12.sp)
+                Text(text = "6.3 l/100km", fontSize = 12.sp)
             }
         }
     }
