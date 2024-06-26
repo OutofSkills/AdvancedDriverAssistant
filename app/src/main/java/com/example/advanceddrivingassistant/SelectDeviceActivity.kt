@@ -1,5 +1,6 @@
 package com.example.advanceddrivingassistant
 
+import VinDecoder
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
@@ -42,18 +43,15 @@ import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.lifecycleScope
 import com.example.advanceddrivingassistant.components.OverlaySpinner
-import com.example.advanceddrivingassistant.observers.NotificationLifecycleObserver
 import com.example.advanceddrivingassistant.observers.PermissionsLifecycleObserver
 import com.example.advanceddrivingassistant.services.bluetooth.BluetoothService
 import com.example.advanceddrivingassistant.ui.theme.AdvancedDrivingAssistantTheme
 import com.example.advanceddrivingassistant.utils.BluetoothServiceActions
 import com.example.advanceddrivingassistant.utils.ConnectionStateServiceActions
 import com.example.advanceddrivingassistant.utils.logToFile
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 
 class SelectDeviceActivity : ComponentActivity(), PermissionsLifecycleObserver.PermissionsSetupCallback {
     private val loggingTag = "SelectDeviceActivityTag"

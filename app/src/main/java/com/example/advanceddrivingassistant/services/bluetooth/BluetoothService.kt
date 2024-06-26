@@ -1,5 +1,6 @@
 package com.example.advanceddrivingassistant.services.bluetooth
 
+import VinDecoder
 import android.app.NotificationManager
 import android.app.Service
 import android.bluetooth.BluetoothDevice
@@ -48,6 +49,8 @@ class BluetoothService : Service() {
 
     private val coroutineNotificationScope = CoroutineScope(Dispatchers.IO)
     private var coroutineNotificationJob: Job? = null
+
+    private val vinDecoder = VinDecoder("b5ef63e3059d", "2d37e10856")
 
     private lateinit var obdCommandManager: ObdCommandManager
     private val localDbManager: LocalDbManager = LocalDbManager(this)
@@ -151,7 +154,7 @@ class BluetoothService : Service() {
                 intent.putExtra("EXTRA_DEVICE_ADDRESS", connectionState.socket.remoteDevice.address)
 
                 obdCommandManager =
-                    ObdCommandManager(this, connectionState.socket, ::onObdResultReceived)
+                    ObdCommandManager(this, connectionState.socket, ::onObdResultReceived, ::onVinResultReceived)
                 obdCommandManager.startCollectingData()
 
                 startStoringDrivingData()
@@ -182,14 +185,11 @@ class BluetoothService : Service() {
         coroutineNotificationJob = coroutineNotificationScope.launch {
             while (true) {
                 try {
-//                    val drivingStyle = ecoDrivingClassifier.classify(ecoDrivingInference.toFloatArray())
-
-                    val ecoDrivingData = EcoDrivingInference.randomInstance()
-                    val drivingStyle = ecoDrivingClassifier.classify(ecoDrivingData.toFloatArray())
+                    val drivingStyle = ecoDrivingClassifier.classify(ecoDrivingInference.toFloatArray())
 
                     val speedAndConsumptionRateRecords =
                         localDbManager.getAverageSpeedAndConsumptionRate(20)
-                    val averageConsumptionRate = calculateConsumptionPer100km(
+                    var averageConsumptionRate = calculateConsumptionPer100km(
                         speedAndConsumptionRateRecords[0],
                         speedAndConsumptionRateRecords[1]
                     )
@@ -199,10 +199,19 @@ class BluetoothService : Service() {
                         "Average consumption rate: $speedAndConsumptionRateRecords"
                     )
 
-                    val instantConsumption = calculateConsumptionPer100km(
+                    var instantConsumption = calculateConsumptionPer100km(
                         carData.speed.toDouble(),
-                        ecoDrivingData.consumptionRate.toDouble()
+                        ecoDrivingInference.consumptionRate.toDouble()
                     )
+
+                    if (instantConsumption.isNaN() || instantConsumption.isInfinite()) {
+                        instantConsumption = 0.0;
+                    }
+
+                    if (averageConsumptionRate.isNaN() || averageConsumptionRate.isInfinite()) {
+                        averageConsumptionRate = 0.0;
+                    }
+
                     carData.instantConsumption = instantConsumption
 
                     updateNotification(drivingStyle, instantConsumption, averageConsumptionRate)
@@ -230,7 +239,7 @@ class BluetoothService : Service() {
                             null,
                             carData.speed.toString(),
                             carData.rpm.toString(),
-                            generateRandomDouble(0.0, 10.0).toString(),
+                            ecoDrivingInference.consumptionRate.toString(),
                             0
                         )
                     )
@@ -244,6 +253,22 @@ class BluetoothService : Service() {
                     )
                 }
             }
+        }
+    }
+
+    private fun onVinResultReceived(result: ObdCommandResult) {
+        logToFile(this, loggingContext, "[onVinResultReceived] result: ${result.name} - ${result.value}")
+        vinDecoder.decodeVin(result.value) { make, model ->
+            logToFile(this, loggingContext, "[onVinResultReceived] make: $make, model: $model")
+
+            val intent = Intent()
+            intent.action = result.name
+
+            intent.putExtra("EXTRA_COMMAND_NAME", "CAR_INFO")
+            intent.putExtra("EXTRA_COMMAND_MAKE", make)
+            intent.putExtra("EXTRA_COMMAND_MODEL", model)
+
+            this@BluetoothService.sendBroadcast(intent)
         }
     }
 

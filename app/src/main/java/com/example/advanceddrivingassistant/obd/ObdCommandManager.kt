@@ -29,9 +29,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
@@ -42,13 +39,11 @@ class ObdCommandManager(
     private val context: Context,
     private val socket: BluetoothSocket?,
     private val onDataReceived: (ObdCommandResult) -> Unit,
+    private val onVinIdentifierReceived: (ObdCommandResult) -> Unit
 ) {
 
     private val loggingTag = "ObdCommandManager"
     private val coroutineScope = CoroutineScope(Dispatchers.IO);
-
-    private val vinIdentifier = MutableStateFlow<ObdCommandResult?>(null)
-    val vinIdentifierFlow: StateFlow<ObdCommandResult?> = vinIdentifier.asStateFlow()
 
     private val initialConfigCommands
         get() = listOf(
@@ -144,8 +139,8 @@ class ObdCommandManager(
         dataCollectingJob = coroutineScope.launch(Dispatchers.IO) {
             configObdDevice().also {
                 getCarVinIdentifier().collect {
-                    vinIdentifier.value =
-                        ObdCommandResult(it.name, it.formattedResult, it.resultUnit)
+                    val vinIdentifier = ObdCommandResult("VIN", it.calculatedResult, "")
+                    onVinIdentifierReceived(vinIdentifier)
                 }
 
                 startObdCommandFlow().collect {

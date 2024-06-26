@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.location.Location
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -21,11 +22,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.example.advanceddrivingassistant.ui.theme.AdvancedDrivingAssistantTheme
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
@@ -41,45 +43,41 @@ import com.google.maps.android.compose.MapUiSettings
 import com.google.maps.android.compose.Marker
 import com.google.maps.android.compose.MarkerState
 import com.google.maps.android.compose.rememberCameraPositionState
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.layout.Box
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Paint
-import androidx.compose.ui.graphics.nativeCanvas
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+import com.example.advanceddrivingassistant.components.MapsLayout
 import com.example.advanceddrivingassistant.components.PerformanceChart
 import com.example.advanceddrivingassistant.db.DrivingData
 import com.example.advanceddrivingassistant.db.LocalDbManager
+import com.example.advanceddrivingassistant.location.LocationUpdatesManager
+import com.example.advanceddrivingassistant.observers.LocationLifecycleObserver
 import com.example.advanceddrivingassistant.utils.EcoScoreUtils
 import com.example.advanceddrivingassistant.utils.calculateConsumptionPer100km
 import com.example.advanceddrivingassistant.utils.formatDouble
+import com.example.advanceddrivingassistant.utils.logToFile
 import com.github.pires.obd.enums.AvailableCommandNames
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
 
-class DashboardActivity : ComponentActivity() {
+class DashboardActivity : ComponentActivity(), LocationLifecycleObserver.LocationSetupCallback {
 
     private val loggingContext = "DashboardActivityTag"
 
@@ -90,6 +88,9 @@ class DashboardActivity : ComponentActivity() {
     private val fuelLevelState = mutableStateOf("0")
     private val instantFuelConsumptionState = mutableDoubleStateOf(0.0)
 
+    private val carModelState = mutableStateOf("")
+    private val carMakeState = mutableStateOf("")
+
     private var fuelConsumptionsRates = mutableStateOf(emptyList<Double>())
 
     private var selectedCarDataRangeFilter = 0 // live
@@ -99,8 +100,16 @@ class DashboardActivity : ComponentActivity() {
     private val coroutineDbScope = CoroutineScope(Dispatchers.IO)
     private val localDbManager: LocalDbManager = LocalDbManager(this)
 
+    private val currentLocationState = mutableStateOf<Location?>(null)
+
+    private lateinit var locationUpdatesManager: LocationUpdatesManager
+
+    private lateinit var locationObserver: LocationLifecycleObserver
+
+
     private val obdCommandIntentFilter = IntentFilter().apply {
         addAction(AvailableCommandNames.FUEL_LEVEL.value)
+        addAction("VIN")
     }
 
     private val obdDataReceiver = object : BroadcastReceiver() {
@@ -113,7 +122,18 @@ class DashboardActivity : ComponentActivity() {
                 when (val action = it.action) {
                     AvailableCommandNames.FUEL_LEVEL.value -> {
                         fuelLevelState.value = it.getStringExtra("EXTRA_COMMAND_VALUE") ?: ""
-                        instantFuelConsumptionState.doubleValue = it.getDoubleExtra("EXTRA_COMMAND_INSTANT_CONSUMPTION", 0.0)
+                        instantFuelConsumptionState.doubleValue =
+                            it.getDoubleExtra("EXTRA_COMMAND_INSTANT_CONSUMPTION", 0.0)
+                    }
+
+                    "VIN" -> {
+                        carMakeState.value = it.getStringExtra("EXTRA_COMMAND_MAKE") ?: "Unknown"
+                        carModelState.value = it.getStringExtra("EXTRA_COMMAND_MODEL") ?: "Unknown"
+                        logToFile(
+                            this@DashboardActivity,
+                            loggingContext,
+                            "$carMakeState $carModelState"
+                        )
                     }
 
                     else -> {
@@ -134,6 +154,9 @@ class DashboardActivity : ComponentActivity() {
                     val rpm by remember { rpmState }
                     val fuelLevel by remember { fuelLevelState }
                     val fuelConsumptionsRates by remember { fuelConsumptionsRates }
+                    val carModel by remember { carModelState }
+                    val carMake by remember { carMakeState }
+                    val currentLocation by remember { currentLocationState }
 
                     DashboardLayout(
                         modifier = Modifier.padding(innerPadding),
@@ -147,7 +170,10 @@ class DashboardActivity : ComponentActivity() {
                             selectedFuelDataRangeFilter = it
                         },
                         fuelConsumptionsRates = fuelConsumptionsRates,
-                        averageCarModelFuelConsumptions = averageCarModelFuelConsumptions
+                        averageCarModelFuelConsumptions = averageCarModelFuelConsumptions,
+                        carModel = carModel,
+                        carMake = carMake,
+                        currentLocation = currentLocation,
                     )
                 }
             }
@@ -156,6 +182,10 @@ class DashboardActivity : ComponentActivity() {
         ContextCompat.registerReceiver(
             this, obdDataReceiver, obdCommandIntentFilter, ContextCompat.RECEIVER_EXPORTED
         )
+
+        locationUpdatesManager = LocationUpdatesManager(this, ::onLocationUpdated)
+        locationObserver = LocationLifecycleObserver(this, this)
+        lifecycle.addObserver(locationObserver)
 
         refreshAverageDrivingData()
     }
@@ -193,6 +223,24 @@ class DashboardActivity : ComponentActivity() {
             }
         }
     }
+
+    private fun onLocationUpdated(location: Location?) {
+        Log.d("MapsActivityTag", "Location updated: $location")
+        currentLocationState.value = location
+    }
+
+    override fun locationTurnedOn() {
+        locationUpdatesManager.startLocationUpdates()
+    }
+
+    override fun locationRequestCanceled() {
+    }
+
+    override fun locationPermissionsGranted() {
+    }
+
+    override fun locationPermissionsRefused() {
+    }
 }
 
 @Composable
@@ -205,16 +253,24 @@ fun DashboardLayout(
     onFuelDataFilterClick: (Int) -> Unit = {},
     fuelConsumptionsRates: List<Double>,
     averageCarModelFuelConsumptions: Double = 0.0,
+    carModel: String = "-",
+    carMake: String = "-",
+    currentLocation: Location? = null,
 ) {
     val fuelConsumptionPer100km =
         calculateConsumptionPer100km(speed.toDoubleOrNull() ?: 0.0, fuelConsumptionsRates.average())
-    val availableRange = ((fuelLevel.toIntOrNull() ?: 0) / fuelConsumptionsRates.average()) * (speed.toIntOrNull() ?: 0)
+    val availableRange =
+        ((fuelLevel.toIntOrNull() ?: 0) / fuelConsumptionsRates.average()) * (speed.toIntOrNull()
+            ?: 0)
 
     val chartLineColor = if (fuelConsumptionPer100km <= averageCarModelFuelConsumptions) Color(
         0xFF8FBC8F
     ) else Color(0xFFB22222)
 
-    val ecoScore = EcoScoreUtils.calculateEcoScore(speed.toDoubleOrNull() ?: 0.0, fuelConsumptionsRates.average())
+    val ecoScore = EcoScoreUtils.calculateEcoScore(
+        speed.toDoubleOrNull() ?: 0.0,
+        fuelConsumptionsRates.average()
+    )
 
     Column(modifier = modifier.fillMaxSize()) {
         Row(
@@ -233,7 +289,9 @@ fun DashboardLayout(
                 .padding(start = 16.dp, end = 16.dp, bottom = 16.dp, top = 8.dp),
             availableRange.toInt(),
             fuelLevel.toIntOrNull() ?: 0,
-            averageCarModelFuelConsumptions
+            averageCarModelFuelConsumptions,
+            carModel,
+            carMake,
         )
 
         Row(
@@ -281,7 +339,8 @@ fun DashboardLayout(
             MapLocationInfoCard(
                 Modifier
                     .weight(1f)
-                    .height(200.dp)
+                    .height(200.dp),
+                currentLocation = currentLocation
             )
         }
 
@@ -400,34 +459,46 @@ private fun InfoButton(onClick: () -> Unit = {}) {
 }
 
 @Composable
-fun MapLocationInfoCard(modifier: Modifier) {
-    val singapore = LatLng(44.3302, 23.7949)
-    val cameraPositionState = rememberCameraPositionState {
-        position = CameraPosition.fromLatLngZoom(singapore, 10f)
-    }
-
+fun MapLocationInfoCard(modifier: Modifier, currentLocation: Location?) {
+    val context = LocalContext.current
     Card(
-        modifier = modifier.padding(start = 4.dp), shape = RoundedCornerShape(10)
-    ) {
-        GoogleMap(
-            modifier = Modifier.fillMaxSize(),
-            cameraPositionState = cameraPositionState,
-            uiSettings = MapUiSettings(
-                zoomControlsEnabled = false
-            )
+        modifier = modifier
+            .padding(start = 4.dp)
+            .clickable {
+                val intent = Intent(context, MapsActivity::class.java).apply {
+                    putExtra("currentLocation", currentLocation)
+                }
+                context.startActivity(intent)
+            },
+        shape = RoundedCornerShape(10),
+
         ) {
-            Marker(
-                state = MarkerState(position = singapore),
-                title = "Craiova",
-                snippet = "Marker in Singapore"
-            )
+        Box {
+            MapsLayout(modifier = modifier, currentLocation = currentLocation, isInteractive = false)
+            Surface(
+                modifier = Modifier.matchParentSize(),
+                color = Color.Transparent
+            ) { }
         }
     }
 }
 
 @Composable
-fun CarInfoCard(modifier: Modifier, availableRange: Int = 0, fuelLevel: Int = 0, averageCarModelFuelConsumptions: Double = 0.0) {
+fun CarInfoCard(
+    modifier: Modifier,
+    availableRange: Int = 0,
+    fuelLevel: Int = 0,
+    averageCarModelFuelConsumptions: Double = 0.0,
+    carModel: String = "",
+    carMake: String = ""
+) {
     val image = painterResource(R.drawable.green_car)
+
+    val carModelAndMake = if (carMake.isEmpty() && carModel.isEmpty()) {
+        "-"
+    } else {
+        "$carMake $carModel"
+    }
 
     Card(
         modifier = modifier,
@@ -443,7 +514,7 @@ fun CarInfoCard(modifier: Modifier, availableRange: Int = 0, fuelLevel: Int = 0,
             )
 
             Text(
-                text = "Skoda Superb",
+                text = carModelAndMake,
                 modifier = Modifier.padding(bottom = 8.dp),
                 fontWeight = FontWeight.Bold
             )
