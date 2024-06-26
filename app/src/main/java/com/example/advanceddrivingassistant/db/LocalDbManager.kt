@@ -88,6 +88,37 @@ class LocalDbManager(context: Context) :
         return dataList
     }
 
+    fun getAverageSpeedAndConsumptionRate(numberOfRecords: Int): List<Double> {
+        val db = readableDatabase
+        val cursor = db.rawQuery(
+            "SELECT $COLUMN_CONSUMPTION_RATE, $COLUMN_SPEED " +
+                    "FROM $TABLE_NAME " +
+                    "ORDER BY $COLUMN_TIMESTAMP DESC " +
+                    "LIMIT ?",
+            arrayOf(numberOfRecords.toString())
+        )
+
+        var totalConsumptionRate = 0.0
+        var totalSpeed = 0.0
+        var count = 0
+
+        while (cursor.moveToNext()) {
+            val consumptionRate = cursor.getDouble(cursor.getColumnIndexOrThrow(COLUMN_CONSUMPTION_RATE))
+            val speed = cursor.getDouble(cursor.getColumnIndexOrThrow(COLUMN_SPEED))
+            totalConsumptionRate += consumptionRate
+            totalSpeed += speed
+            count++
+        }
+
+        cursor.close()
+        db.close()
+
+        val averageConsumptionRate = if (count > 0) totalConsumptionRate / count else 0.0
+        val averageSpeed = if (count > 0) totalSpeed / count else 0.0
+
+        return listOf(averageSpeed, averageConsumptionRate)
+    }
+
     fun getFuelConsumptionRates(numberOfDays: Int): List<Double> {
         val currentTime = System.currentTimeMillis()
         val timeThreshold = currentTime - numberOfDays * 24 * 60 * 60 * 1000L

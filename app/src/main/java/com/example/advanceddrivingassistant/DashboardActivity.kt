@@ -53,6 +53,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -67,7 +68,9 @@ import androidx.core.content.ContextCompat
 import com.example.advanceddrivingassistant.components.PerformanceChart
 import com.example.advanceddrivingassistant.db.DrivingData
 import com.example.advanceddrivingassistant.db.LocalDbManager
+import com.example.advanceddrivingassistant.utils.EcoScoreUtils
 import com.example.advanceddrivingassistant.utils.calculateConsumptionPer100km
+import com.example.advanceddrivingassistant.utils.formatDouble
 import com.github.pires.obd.enums.AvailableCommandNames
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -85,6 +88,7 @@ class DashboardActivity : ComponentActivity() {
     private val speedState = mutableStateOf("0")
     private val rpmState = mutableStateOf("0")
     private val fuelLevelState = mutableStateOf("0")
+    private val instantFuelConsumptionState = mutableDoubleStateOf(0.0)
 
     private var fuelConsumptionsRates = mutableStateOf(emptyList<Double>())
 
@@ -109,6 +113,7 @@ class DashboardActivity : ComponentActivity() {
                 when (val action = it.action) {
                     AvailableCommandNames.FUEL_LEVEL.value -> {
                         fuelLevelState.value = it.getStringExtra("EXTRA_COMMAND_VALUE") ?: ""
+                        instantFuelConsumptionState.doubleValue = it.getDoubleExtra("EXTRA_COMMAND_INSTANT_CONSUMPTION", 0.0)
                     }
 
                     else -> {
@@ -203,11 +208,13 @@ fun DashboardLayout(
 ) {
     val fuelConsumptionPer100km =
         calculateConsumptionPer100km(speed.toDoubleOrNull() ?: 0.0, fuelConsumptionsRates.average())
-    Log.d("DashboardLayout", "fuelConsumptionPer100km: $fuelConsumptionPer100km")
+    val availableRange = ((fuelLevel.toIntOrNull() ?: 0) / fuelConsumptionsRates.average()) * (speed.toIntOrNull() ?: 0)
+
     val chartLineColor = if (fuelConsumptionPer100km <= averageCarModelFuelConsumptions) Color(
         0xFF8FBC8F
     ) else Color(0xFFB22222)
 
+    val ecoScore = EcoScoreUtils.calculateEcoScore(speed.toDoubleOrNull() ?: 0.0, fuelConsumptionsRates.average())
 
     Column(modifier = modifier.fillMaxSize()) {
         Row(
@@ -223,7 +230,10 @@ fun DashboardLayout(
         CarInfoCard(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 16.dp, end = 16.dp, bottom = 16.dp, top = 8.dp)
+                .padding(start = 16.dp, end = 16.dp, bottom = 16.dp, top = 8.dp),
+            availableRange.toInt(),
+            fuelLevel.toIntOrNull() ?: 0,
+            averageCarModelFuelConsumptions
         )
 
         Row(
@@ -293,7 +303,7 @@ fun DashboardLayout(
             Column(modifier = Modifier.padding(horizontal = 16.dp)) {
                 LabeledValueRow(
                     label = "Eco Score",
-                    value = "721pts",
+                    value = "${formatDouble(ecoScore)}pts",
                     icon = ImageVector.vectorResource(R.drawable.eco_friendly)
                 )
 
@@ -416,7 +426,7 @@ fun MapLocationInfoCard(modifier: Modifier) {
 }
 
 @Composable
-fun CarInfoCard(modifier: Modifier) {
+fun CarInfoCard(modifier: Modifier, availableRange: Int = 0, fuelLevel: Int = 0, averageCarModelFuelConsumptions: Double = 0.0) {
     val image = painterResource(R.drawable.green_car)
 
     Card(
@@ -453,7 +463,7 @@ fun CarInfoCard(modifier: Modifier) {
                             contentDescription = "Available range",
                             modifier = Modifier.size(18.dp)
                         )
-                        Text(text = "~520Km", fontSize = 12.sp)
+                        Text(text = "~${availableRange}Km", fontSize = 12.sp)
                     }
                     Row(
                         modifier = Modifier.padding(start = 3.dp),
@@ -464,10 +474,10 @@ fun CarInfoCard(modifier: Modifier) {
                             contentDescription = "Fuel level",
                             modifier = Modifier.size(16.dp)
                         )
-                        Text(text = "66L", fontSize = 12.sp)
+                        Text(text = "${fuelLevel}L", fontSize = 12.sp)
                     }
                 }
-                Text(text = "6.3 l/100km", fontSize = 12.sp)
+                Text(text = "$averageCarModelFuelConsumptions l/100km", fontSize = 12.sp)
             }
         }
     }
