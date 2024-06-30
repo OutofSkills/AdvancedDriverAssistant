@@ -33,7 +33,9 @@ import com.example.advanceddrivingassistant.ui.theme.AdvancedDrivingAssistantThe
 import com.google.android.libraries.places.api.Places
 import com.google.android.libraries.places.api.model.AutocompletePrediction
 import com.google.android.libraries.places.api.model.AutocompleteSessionToken
+import com.google.android.libraries.places.api.model.Place
 import com.google.android.libraries.places.api.model.TypeFilter
+import com.google.android.libraries.places.api.net.FetchPlaceRequest
 import com.google.android.libraries.places.api.net.FindAutocompletePredictionsRequest
 import com.google.android.libraries.places.api.net.PlacesClient
 
@@ -47,33 +49,43 @@ class MapsActivity : ComponentActivity(), LocationLifecycleObserver.LocationSetu
 
     private lateinit var placesClient: PlacesClient
 
+    fun mockLocation(latitude: Double, longitude: Double, provider: String = "mock"): Location {
+        return Location(provider).apply {
+            this.latitude = latitude
+            this.longitude = longitude
+            this.accuracy = 1f
+            this.time = System.currentTimeMillis()
+        }
+    }
+
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
             val currentLocation by remember { currentLocationState }
+            val targetLocation = remember { mutableStateOf<Location?>(null) }
 
             AdvancedDrivingAssistantTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     Box(modifier = Modifier.fillMaxSize()) {
-                        // MapsLayout occupies the entire Box
                         MapsLayout(
                             modifier = Modifier.fillMaxSize(),
                             currentLocation = currentLocation,
+                            targetLocation = targetLocation.value
                         )
 
-                        // AutocompleteSearchBox positioned at the top center
                         AutocompleteSearchBox(
                             placesClient = placesClient,
-                            onPlaceSelected = { prediction ->
-                                // Handle place selection
+                            onPlaceSelected = { location ->
+                                targetLocation.value = location
                             },
                             modifier = Modifier
                                 .align(Alignment.TopCenter)
                                 .padding(16.dp)
                         )
                     }
-                    }
+                }
             }
         }
 
@@ -109,10 +121,11 @@ class MapsActivity : ComponentActivity(), LocationLifecycleObserver.LocationSetu
     override fun locationPermissionsRefused() {
     }
 }
+
 @Composable
 fun AutocompleteSearchBox(
     placesClient: PlacesClient,
-    onPlaceSelected: (AutocompletePrediction) -> Unit,
+    onPlaceSelected: (Location) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var searchText by remember { mutableStateOf("") }
@@ -143,7 +156,11 @@ fun AutocompleteSearchBox(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 4.dp)
-                    .clickable { onPlaceSelected(prediction) }
+                    .clickable {
+                        fetchPlaceDetails(placesClient, prediction.placeId) { location ->
+                            onPlaceSelected(location)
+                        }
+                    }
                     .padding(horizontal = 16.dp, vertical = 8.dp)
             )
         }
@@ -170,6 +187,29 @@ private fun fetchPredictions(
                 predictions.add(prediction)
             }
             onPredictionsReceived(predictions)
+        }
+        .addOnFailureListener { exception ->
+            // Handle error
+        }
+}
+
+private fun fetchPlaceDetails(
+    placesClient: PlacesClient,
+    placeId: String,
+    onPlaceDetailsFetched: (Location) -> Unit
+) {
+    val request = FetchPlaceRequest.builder(placeId, listOf(Place.Field.LAT_LNG)).build()
+
+    placesClient.fetchPlace(request)
+        .addOnSuccessListener { response ->
+            val place = response.place
+            place.latLng?.let { latLng ->
+                val location = Location("").apply {
+                    latitude = latLng.latitude
+                    longitude = latLng.longitude
+                }
+                onPlaceDetailsFetched(location)
+            }
         }
         .addOnFailureListener { exception ->
             // Handle error

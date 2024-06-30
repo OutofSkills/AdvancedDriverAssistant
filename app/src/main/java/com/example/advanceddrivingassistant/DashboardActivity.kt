@@ -86,7 +86,6 @@ class DashboardActivity : ComponentActivity(), LocationLifecycleObserver.Locatio
     private val speedState = mutableStateOf("0")
     private val rpmState = mutableStateOf("0")
     private val fuelLevelState = mutableStateOf("0")
-    private val instantFuelConsumptionState = mutableDoubleStateOf(0.0)
 
     private val carModelState = mutableStateOf("")
     private val carMakeState = mutableStateOf("")
@@ -108,7 +107,7 @@ class DashboardActivity : ComponentActivity(), LocationLifecycleObserver.Locatio
 
 
     private val obdCommandIntentFilter = IntentFilter().apply {
-        addAction(AvailableCommandNames.FUEL_LEVEL.value)
+        addAction("FUEL_LEVEL")
         addAction("VIN")
     }
 
@@ -122,8 +121,6 @@ class DashboardActivity : ComponentActivity(), LocationLifecycleObserver.Locatio
                 when (val action = it.action) {
                     AvailableCommandNames.FUEL_LEVEL.value -> {
                         fuelLevelState.value = it.getStringExtra("EXTRA_COMMAND_VALUE") ?: ""
-                        instantFuelConsumptionState.doubleValue =
-                            it.getDoubleExtra("EXTRA_COMMAND_INSTANT_CONSUMPTION", 0.0)
                     }
 
                     "VIN" -> {

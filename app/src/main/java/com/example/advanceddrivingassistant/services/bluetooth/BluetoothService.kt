@@ -278,6 +278,15 @@ class BluetoothService : Service() {
         when (result.name) {
             AvailableCommandNames.FUEL_LEVEL.value -> {
                 carData.fuelLevel = result.value.toDoubleOrNull() ?: 0.0
+
+                val intent = Intent()
+                intent.action = "FUEL_LEVEL"
+
+                intent.putExtra("EXTRA_COMMAND_NAME", AvailableCommandNames.FUEL_LEVEL.value)
+                intent.putExtra("EXTRA_COMMAND_VALUE", carData.fuelLevel)
+                intent.putExtra("EXTRA_COMMAND_UNIT", result.unit)
+
+                this@BluetoothService.sendBroadcast(intent)
             }
 
             AvailableCommandNames.ENGINE_RPM.value -> {
@@ -318,16 +327,6 @@ class BluetoothService : Service() {
                 ecoDrivingInference.relativeThrottlePosition = result.value.toFloatOrNull() ?: 0.0f
             }
         }
-
-        val intent = Intent()
-        intent.action = result.name
-
-        intent.putExtra("EXTRA_COMMAND_NAME", result.name)
-        intent.putExtra("EXTRA_COMMAND_VALUE", result.value)
-        intent.putExtra("EXTRA_COMMAND_UNIT", result.unit)
-        intent.putExtra("EXTRA_COMMAND_INSTANT_CONSUMPTION", carData.instantConsumption)
-
-        this@BluetoothService.sendBroadcast(intent)
     }
 
     private fun updateNotification(
