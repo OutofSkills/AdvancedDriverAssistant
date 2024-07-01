@@ -50,7 +50,7 @@ class BluetoothService : Service() {
     private val coroutineNotificationScope = CoroutineScope(Dispatchers.IO)
     private var coroutineNotificationJob: Job? = null
 
-    private val vinDecoder = VinDecoder("b5ef63e3059d", "2d37e10856")
+    private val vinDecoder = VinDecoder("", "")
 
     private lateinit var obdCommandManager: ObdCommandManager
     private val localDbManager: LocalDbManager = LocalDbManager(this)
